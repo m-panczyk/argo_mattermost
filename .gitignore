@@ -1,0 +1,8 @@
+# Secrets — MUST NOT be committed!
+.env
+*.key
+*.pem
+secret.env
+
+# Docker build context (if any)
+Dockerfile.cache*
