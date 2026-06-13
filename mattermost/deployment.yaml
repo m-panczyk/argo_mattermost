@@ -15,21 +15,14 @@ spec:
       labels:
         app: mattermost
     spec:
-      # Init container fixes PVC permissions once
-      initContainers:
-      - name: init-permissions
-        image: busybox:latest
-        command: ['sh', '-c', 'mkdir -p /mattermost/data /mattermost/logs /mattermost/plugins && chmod 777 /mattermost/data /mattermost/logs /mattermost/plugins']
-        volumeMounts:
-        - name: data
-          mountPath: /mattermost/data
-      
+      securityContext:
+        runAsUser: 0
+        fsGroup: 0
       containers:
       - name: mattermost
-        # Official mattermost image with ARM64 support
-        image: mattermost/mattermost-team-edition:latest
-        imagePullPolicy: IfNotPresent
-        
+        image: rheens/mattermost-app:v11.3.0
+        imagePullPolicy: Always
+        command: ["/bin/sh", "/custom-entrypoint/entrypoint.sh"]
         env:
         - name: MM_SQLSETTINGS_DATASOURCE
           valueFrom:
@@ -45,34 +38,29 @@ spec:
           value: postgres
         - name: MM_SERVICESETTINGS_LISTENADDRESS
           value: ":8065"
-        # Send logs to stdout instead of file (Kubernetes best practice)
         - name: MM_LOGSETTINGS_ENABLEFILE
           value: "false"
         - name: MM_LOGSETTINGS_ENABLECONSOLE
           value: "true"
         - name: MM_LOGSETTINGS_CONSOLELEVEL
           value: "ERROR"
-        
         ports:
         - containerPort: 8065
           name: http
-        
         readinessProbe:
           httpGet:
             path: /api/v4/system/ping
             port: 8065
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          failureThreshold: 5
-        
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          failureThreshold: 10
         livenessProbe:
           httpGet:
             path: /api/v4/system/ping
             port: 8065
-          initialDelaySeconds: 90
+          initialDelaySeconds: 180
           periodSeconds: 30
-          failureThreshold: 3
-        
+          failureThreshold: 5
         resources:
           requests:
             cpu: 250m
@@ -80,16 +68,23 @@ spec:
           limits:
             cpu: 1000m
             memory: 1Gi
-        
         volumeMounts:
         - name: data
           mountPath: /mattermost/data
+          subPath: data
         - name: data
           mountPath: /mattermost/logs
+          subPath: logs
         - name: data
           mountPath: /mattermost/plugins
-      
+          subPath: plugins
+        - name: custom-entrypoint
+          mountPath: /custom-entrypoint
       volumes:
       - name: data
         persistentVolumeClaim:
           claimName: mattermost-data-pvc
+      - name: custom-entrypoint
+        configMap:
+          name: mattermost-entrypoint
+          defaultMode: 0755
