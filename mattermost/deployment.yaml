@@ -15,43 +15,21 @@ spec:
       labels:
         app: mattermost
     spec:
-      securityContext:
-        runAsUser: 0
-        fsGroup: 0
+      # Init container fixes PVC permissions once
       initContainers:
-      - name: init-config
-        image: rheens/mattermost-app:v11.3.0
-        command: ["/bin/sh", "-c"]
-        args:
-        - |
-          if [ ! -f /mattermost/config/config.json ]; then
-            jq --arg ds "$MM_SQLSETTINGS_DATASOURCE" \
-              '.SqlSettings.DataSource = $ds
-               | .SqlSettings.DriverName = "postgres"
-               | .ServiceSettings.ListenAddress = ":8065"
-               | .LogSettings.EnableConsole = true
-               | .LogSettings.ConsoleLevel = "ERROR"
-               | .FileSettings.Directory = "/mattermost/data/"
-               | .PluginSettings.Directory = "/mattermost/plugins/"' \
-              /mattermost/config.json.save > /mattermost/config/config.json
-            echo "Config created with correct DataSource and ListenAddress"
-          else
-            echo "Config exists, skipping"
-          fi
-        env:
-        - name: MM_SQLSETTINGS_DATASOURCE
-          valueFrom:
-            secretKeyRef:
-              name: mattermost-app
-              key: MM_SQLSETTINGS_DATASOURCE
+      - name: init-permissions
+        image: busybox:latest
+        command: ['sh', '-c', 'mkdir -p /mattermost/data /mattermost/logs /mattermost/plugins && chmod 777 /mattermost/data /mattermost/logs /mattermost/plugins']
         volumeMounts:
-        - name: config
-          mountPath: /mattermost/config
+        - name: data
+          mountPath: /mattermost/data
+      
       containers:
       - name: mattermost
-        image: rheens/mattermost-app:v11.3.0
-        imagePullPolicy: Always
-        command: ["/bin/sh", "/custom-entrypoint/entrypoint.sh"]
+        # Official mattermost image with ARM64 support
+        image: mattermost/mattermost-team-edition:latest
+        imagePullPolicy: IfNotPresent
+        
         env:
         - name: MM_SQLSETTINGS_DATASOURCE
           valueFrom:
@@ -67,22 +45,34 @@ spec:
           value: postgres
         - name: MM_SERVICESETTINGS_LISTENADDRESS
           value: ":8065"
+        # Send logs to stdout instead of file (Kubernetes best practice)
+        - name: MM_LOGSETTINGS_ENABLEFILE
+          value: "false"
+        - name: MM_LOGSETTINGS_ENABLECONSOLE
+          value: "true"
+        - name: MM_LOGSETTINGS_CONSOLELEVEL
+          value: "ERROR"
+        
         ports:
         - containerPort: 8065
+          name: http
+        
         readinessProbe:
           httpGet:
             path: /api/v4/system/ping
             port: 8065
-          initialDelaySeconds: 60
-          periodSeconds: 15
-          failureThreshold: 10
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 5
+        
         livenessProbe:
           httpGet:
             path: /api/v4/system/ping
             port: 8065
-          initialDelaySeconds: 180
+          initialDelaySeconds: 90
           periodSeconds: 30
-          failureThreshold: 5
+          failureThreshold: 3
+        
         resources:
           requests:
             cpu: 250m
@@ -90,26 +80,16 @@ spec:
           limits:
             cpu: 1000m
             memory: 1Gi
+        
         volumeMounts:
         - name: data
           mountPath: /mattermost/data
-        - name: logs
+        - name: data
           mountPath: /mattermost/logs
-        - name: config
-          mountPath: /mattermost/config
-        - name: custom-entrypoint
-          mountPath: /custom-entrypoint
+        - name: data
+          mountPath: /mattermost/plugins
+      
       volumes:
       - name: data
         persistentVolumeClaim:
           claimName: mattermost-data-pvc
-      - name: logs
-        persistentVolumeClaim:
-          claimName: mattermost-logs-pvc
-      - name: config
-        persistentVolumeClaim:
-          claimName: mattermost-config-pvc
-      - name: custom-entrypoint
-        configMap:
-          name: mattermost-entrypoint
-          defaultMode: 0755

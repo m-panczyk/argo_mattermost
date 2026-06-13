@@ -4,10 +4,20 @@ GitOps deployment Mattermost z PostgreSQL na k3s, zarządzany przez ArgoCD z Kus
 
 ## Stos technologiczny
 
-- **k3s** — lekka dystrybucja Kubernetes
+- **k3s** — lekka dystrybucja Kubernetes (wspiera ARM64)
 - **ArgoCD** — GitOps, automatyczny sync klastra z repozytorium
 - **Kustomize** — zarządzanie manifestami
 - **Longhorn** — distributed block storage (RWO)
+- **mattermost/mattermost-team-edition:latest** — oficjalny obraz z wsparciem ARM64 (AMD64 + ARM64)
+
+## Architektura
+
+**Uproszczona** w stosunku do poprzedniej wersji:
+- ✅ **1 PVC** zamiast 3 (data, logs, plugins wszystko w jednym)
+- ✅ **Brak custom Dockerfile** — używamy oficjalnego obrazu Mattermost
+- ✅ **Brak duplicate ConfigMap** — Mattermost obsługuje zmienne środowiskowe
+- ✅ **Logs do stdout** — zamiast na dysk (Kubernetes best practice)
+- ✅ **ARM64-ready** — działa na macOS (Apple Silicon), M4 i innych ARM64
 
 ## Struktura repo
 
@@ -22,7 +32,7 @@ GitOps deployment Mattermost z PostgreSQL na k3s, zarządzany przez ArgoCD z Kus
 │   └── service.yaml         # ClusterIP :5432
 └── mattermost/
     ├── deployment.yaml      # mattermost-team-edition:latest, probes /api/v4/system/ping
-    ├── pvc.yaml             # 2× PVC: data (5Gi) + logs (2Gi), RWO, longhorn
+    ├── pvc.yaml             # Pojedynczy 10Gi dla all data/logs/plugins
     └── service.yaml         # LoadBalancer :8065
 ```
 
@@ -31,6 +41,7 @@ GitOps deployment Mattermost z PostgreSQL na k3s, zarządzany przez ArgoCD z Kus
 - k3s z działającym Longhorn
 - ArgoCD zainstalowany w namespace `argocd`
 - `kubectl` skonfigurowany z dostępem do klastra
+- Dla macOS/Apple Silicon: upewnij się, że węzły k3s wspierają ARM64
 
 ## Deployment
 
@@ -53,8 +64,6 @@ kubectl create secret generic mattermost-app -n mattermost \
   --from-literal=MM_SERVICESETTINGS_SITEURL="http://<IP-EXTERNAL>:8065"
 ```
 
-Wymagane klucze znajdziesz w `postgres/secret.env.example` i `mattermost/secret.env.example`.
-
 ### 2. Zarejestruj aplikację w ArgoCD
 
 ```bash
@@ -73,6 +82,24 @@ kubectl get svc mattermost -n mattermost   # → EXTERNAL-IP
 
 Mattermost będzie dostępny pod `http://EXTERNAL-IP:8065`.
 
+## Debugowanie
+
+### Logi Mattermost
+```bash
+kubectl logs -n mattermost -l app=mattermost -f
+```
+
+### Sprawdź status PostgreSQL
+```bash
+kubectl exec -n mattermost -it <postgres-pod> -- psql -U mmuser -d mattermost -c "\dt"
+```
+
+### Jeśli pod się nie startuje
+```bash
+kubectl describe pod -n mattermost <pod-name>
+kubectl logs -n mattermost <pod-name> --previous  # poprzedni kontener
+```
+
 ## Zarządzanie secretami
 
 Sekrety **nie trafiają do repo**. Podejście świadome:
@@ -84,67 +111,43 @@ Sekrety **nie trafiają do repo**. Podejście świadome:
 
 Na produkcję zalecane jest [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets) — zaszyfrowany YAML bezpieczny do commitowania.
 
-## Runbook — awaria węzła
+## Zmienne środowiskowe Mattermost
 
-### Automatyczne odtwarzanie
+Wszystkie zmienne ustawiane są jako `MM_*` env vars w deployment.yaml.
+Pełna lista dostępnych zmiennych: https://docs.mattermost.com/configure/environment-variables.html
 
-CronJob `node-recovery` (uruchamiany co minutę) wykrywa węzły w stanie `NotReady` i usuwa ich `VolumeAttachment`. Dzięki temu Longhorn może remontować wolumeny PostgreSQL na działającym węźle bez interwencji ręcznej.
+Przykłady często używanych:
 
-### Ręczna interwencja — stuck pody
-
-Pierwsze co robisz przy awarii węzła:
-
-```bash
-# 1. Sprawdź co utknęło
-kubectl get pods -n mattermost -o wide
-
-# 2. Force-delete stuck podów (nie czekaj na graceful shutdown martwego węzła)
-kubectl delete pod -n mattermost <nazwa-poda> --force --grace-period=0
-
-# 3. Jeśli VolumeAttachment nie zniknął automatycznie
-kubectl get volumeattachment | grep <nazwa-węzła>
-kubectl delete volumeattachment <nazwa> --force --grace-period=0
+```yaml
+MM_LOGSETTINGS_ENABLECONSOLE: "true"
+MM_LOGSETTINGS_CONSOLELEVEL: "ERROR"  # DEBUG, INFO, WARN, ERROR
+MM_FILESETTINGS_DRIVERNAME: "local"
+MM_SQLSETTINGS_MAXIDLECONNS: "10"
 ```
 
-> `--force --grace-period=0` jest bezpieczne gdy węzeł fizycznie nie odpowiada — Kubernetes normalnie czeka na potwierdzenie od kubelet, które nigdy nie przyjdzie.
+## Troubleshooting
 
-### Odtworzenie secretów po utracie namespace
+### Mattermost nie łączy się z bazą
+1. Sprawdź czy postgres pod jest running: `kubectl get pods -n mattermost`
+2. Sprawdź secret: `kubectl get secret -n mattermost mattermost-app -o yaml`
+3. Sprawdź logi: `kubectl logs -n mattermost -l app=mattermost`
 
+### PVC stuck pending
 ```bash
-# mattermost-db
-kubectl create secret generic mattermost-db -n mattermost \
-  --from-literal=POSTGRES_DB=mattermost \
-  --from-literal=POSTGRES_USER=mmuser \
-  --from-literal=POSTGRES_PASSWORD='...'
-
-# mattermost-app
-kubectl create secret generic mattermost-app -n mattermost \
-  --from-literal=MM_SQLSETTINGS_DATASOURCE="postgres://mmuser:...@postgres:5432/mattermost?sslmode=disable" \
-  --from-literal=MM_SERVICESETTINGS_SITEURL="http://<IP>:8065"
+kubectl describe pvc -n mattermost mattermost-data-pvc
+# Jeśli storageClass: longhorn nie istnieje:
+kubectl get storageclass
 ```
 
----
+### Pod evicted (out of memory/disk)
+Zwiększ `storage` w `mattermost/pvc.yaml` i zastosuj ponownie.
 
-## Uwagi operacyjne
+## Usunięcie
 
-**Longhorn RWO** — Mattermost działa na jednej replice z pojedynczym wolumenem danych. Skalowanie poziome wymaga RWX (ReadWriteMany), co z kolei wymaga `nfs-common` na węzłach:
 ```bash
-sudo apt-get install -y nfs-common   # na każdym węźle
+kubectl delete -f argocd-app.yaml
+# Jeśli chcesz usunąć również namespace i dane:
+kubectl delete namespace mattermost
 ```
 
-**ArgoCD `prune: true`** — zasoby usunięte z git są usuwane z klastra. Nie usuwaj PVC z repo przypadkowo — Longhorn skasuje dane.
-
-**Odtworzenie po resecie klastra:**
-```bash
-# Odtwórz secret (jedyna ręczna czynność)
-kubectl create secret generic mattermost-db -n mattermost \
-  --from-literal=POSTGRES_DB=mattermost \
-  --from-literal=POSTGRES_USER=mmuser \
-  --from-literal=POSTGRES_PASSWORD='...'
-
-kubectl create secret generic mattermost-app -n mattermost \
-  --from-literal=MM_SQLSETTINGS_DATASOURCE="postgres://mmuser:...@postgres:5432/mattermost?sslmode=disable" \
-  --from-literal=MM_SERVICESETTINGS_SITEURL="http://<IP>:8065"
-
-kubectl apply -f argocd-app.yaml
-```
+**UWAGA**: Usunięcie namespace spowoduje usunięcie wszystkich PVC i danych!

@@ -7,6 +7,5 @@ resources:
   - postgres/deployment.yaml
   - postgres/service.yaml
   - mattermost/pvc.yaml
-  - mattermost/entrypoint-configmap.yaml
   - mattermost/deployment.yaml
   - mattermost/service.yaml
