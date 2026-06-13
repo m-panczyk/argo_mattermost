@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: mattermost
-        image: mattermost/mattermost-team-edition:11.7.0
+        image: mattermost/mattermost-team-edition:10.12.4
         imagePullPolicy: Always
         env:
         - name: MM_SQLSETTINGS_DATASOURCE
