@@ -65,6 +65,8 @@ spec:
           mountPath: /mattermost/data
         - name: logs
           mountPath: /mattermost/logs
+        - name: config
+          mountPath: /mattermost/config
       volumes:
       - name: data
         persistentVolumeClaim:
@@ -72,3 +74,6 @@ spec:
       - name: logs
         persistentVolumeClaim:
           claimName: mattermost-logs-pvc
+      - name: config
+        persistentVolumeClaim:
+          claimName: mattermost-config-pvc
