@@ -22,6 +22,7 @@ spec:
       - name: mattermost
         image: rheens/mattermost-app:v11.3.0
         imagePullPolicy: Always
+        command: ["/entrypoint.sh"]
         env:
         - name: MM_SQLSETTINGS_DATASOURCE
           valueFrom:
@@ -43,15 +44,15 @@ spec:
           httpGet:
             path: /api/v4/system/ping
             port: 8065
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          failureThreshold: 6
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          failureThreshold: 10
         livenessProbe:
           httpGet:
             path: /api/v4/system/ping
             port: 8065
-          initialDelaySeconds: 60
-          periodSeconds: 20
+          initialDelaySeconds: 180
+          periodSeconds: 30
           failureThreshold: 5
         resources:
           requests:
