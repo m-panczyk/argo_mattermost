@@ -20,7 +20,7 @@ spec:
         fsGroup: 0
       containers:
       - name: mattermost
-        image: ngrie/mattermost-team-edition-arm:10.11.2
+        image: mattermost/mattermost-team-edition:latest
         imagePullPolicy: Always
         env:
         - name: MM_SQLSETTINGS_DATASOURCE
