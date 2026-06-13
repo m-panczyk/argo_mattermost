@@ -18,12 +18,38 @@ spec:
       securityContext:
         runAsUser: 0
         fsGroup: 0
+      initContainers:
+      - name: init-config
+        image: rheens/mattermost-app:v11.3.0
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          if [ ! -f /mattermost/config/config.json ]; then
+            jq --arg ds "$MM_SQLSETTINGS_DATASOURCE" \
+              '.SqlSettings.DataSource = $ds
+               | .SqlSettings.DriverName = "postgres"
+               | .LogSettings.EnableConsole = true
+               | .LogSettings.ConsoleLevel = "ERROR"
+               | .FileSettings.Directory = "/mattermost/data/"
+               | .PluginSettings.Directory = "/mattermost/plugins/"' \
+              /mattermost/config.json.save > /mattermost/config/config.json
+            echo "Config created with correct DataSource"
+          else
+            echo "Config already exists, skipping"
+          fi
+        env:
+        - name: MM_SQLSETTINGS_DATASOURCE
+          valueFrom:
+            secretKeyRef:
+              name: mattermost-app
+              key: MM_SQLSETTINGS_DATASOURCE
+        volumeMounts:
+        - name: config
+          mountPath: /mattermost/config
       containers:
       - name: mattermost
         image: rheens/mattermost-app:v11.3.0
         imagePullPolicy: Always
-        command: ["/entrypoint.sh"]
-        args: ["server"]
         env:
         - name: MM_SQLSETTINGS_DATASOURCE
           valueFrom:
