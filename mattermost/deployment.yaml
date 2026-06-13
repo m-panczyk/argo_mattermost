@@ -37,7 +37,6 @@ spec:
           value: "0.0.0.0:8065"
         - name: MM_SQLSETTINGS_DRIVERNAME
           value: postgres
-        command: ["/bin/sh", "-c", "exec /entrypoint.sh \"$@\"", "_"]
         ports:
         - containerPort: 8065
         readinessProbe:
