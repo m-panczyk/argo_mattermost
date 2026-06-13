@@ -36,7 +36,9 @@ data:
          | .EmailSettings.InviteSalt = $isalt
          | .EmailSettings.PasswordResetSalt = $prsalt
          | .SqlSettings.AtRestEncryptKey = $arekey
-         | .PluginSettings.Directory = "/mattermost/plugins/"' \
+         | .PluginSettings.Directory = "/mattermost/plugins/"
+         | .ServiceSettings.EnableLocalMode = true
+         | .ServiceSettings.LocalModeSocketLocation = "/var/tmp/mattermost_local.socket"' \
         /mattermost/config.json.save > "$MM_CONFIG_TMP" && mv "$MM_CONFIG_TMP" "$MM_CONFIG"
       echo "Config created."
     else
