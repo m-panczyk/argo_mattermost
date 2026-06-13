@@ -28,12 +28,13 @@ spec:
             jq --arg ds "$MM_SQLSETTINGS_DATASOURCE" \
               '.SqlSettings.DataSource = $ds
                | .SqlSettings.DriverName = "postgres"
+               | .ServiceSettings.ListenAddress = ":8065"
                | .LogSettings.EnableConsole = true
                | .LogSettings.ConsoleLevel = "ERROR"
                | .FileSettings.Directory = "/mattermost/data/"
                | .PluginSettings.Directory = "/mattermost/plugins/"' \
               /mattermost/config.json.save > /mattermost/config/config.json
-            echo "Config created with correct DataSource"
+            echo "Config created with correct DataSource and ListenAddress"
           else
             echo "Config exists, skipping"
           fi
@@ -64,6 +65,8 @@ spec:
               key: MM_SERVICESETTINGS_SITEURL
         - name: MM_SQLSETTINGS_DRIVERNAME
           value: postgres
+        - name: MM_SERVICESETTINGS_LISTENADDRESS
+          value: ":8065"
         ports:
         - containerPort: 8065
         readinessProbe:
