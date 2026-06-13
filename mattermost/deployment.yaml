@@ -33,10 +33,11 @@ spec:
             secretKeyRef:
               name: mattermost-app
               key: MM_SERVICESETTINGS_SITEURL
-        - name: MM_SERVICESETTINGS_LISTENADDRESS
-          value: ":8065"
+        - name: MM_LISTEN_ADDRESS
+          value: "0.0.0.0:8065"
         - name: MM_SQLSETTINGS_DRIVERNAME
           value: postgres
+        command: ["/bin/sh", "-c", "exec /entrypoint.sh \"$@\"", "_"]
         ports:
         - containerPort: 8065
         readinessProbe:
