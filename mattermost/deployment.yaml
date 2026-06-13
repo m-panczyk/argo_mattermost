@@ -23,6 +23,7 @@ spec:
         image: rheens/mattermost-app:v11.3.0
         imagePullPolicy: Always
         command: ["/entrypoint.sh"]
+        args: ["server"]
         env:
         - name: MM_SQLSETTINGS_DATASOURCE
           valueFrom:
