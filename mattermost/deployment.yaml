@@ -35,7 +35,7 @@ spec:
               /mattermost/config.json.save > /mattermost/config/config.json
             echo "Config created with correct DataSource"
           else
-            echo "Config already exists, skipping"
+            echo "Config exists, skipping"
           fi
         env:
         - name: MM_SQLSETTINGS_DATASOURCE
@@ -50,6 +50,7 @@ spec:
       - name: mattermost
         image: rheens/mattermost-app:v11.3.0
         imagePullPolicy: Always
+        command: ["/bin/sh", "/custom-entrypoint/entrypoint.sh"]
         env:
         - name: MM_SQLSETTINGS_DATASOURCE
           valueFrom:
@@ -61,8 +62,6 @@ spec:
             secretKeyRef:
               name: mattermost-app
               key: MM_SERVICESETTINGS_SITEURL
-        - name: MM_LISTEN_ADDRESS
-          value: "0.0.0.0:8065"
         - name: MM_SQLSETTINGS_DRIVERNAME
           value: postgres
         ports:
@@ -95,6 +94,8 @@ spec:
           mountPath: /mattermost/logs
         - name: config
           mountPath: /mattermost/config
+        - name: custom-entrypoint
+          mountPath: /custom-entrypoint
       volumes:
       - name: data
         persistentVolumeClaim:
@@ -105,3 +106,7 @@ spec:
       - name: config
         persistentVolumeClaim:
           claimName: mattermost-config-pvc
+      - name: custom-entrypoint
+        configMap:
+          name: mattermost-entrypoint
+          defaultMode: 0755

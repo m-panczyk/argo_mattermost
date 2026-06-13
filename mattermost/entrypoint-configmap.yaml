@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mattermost-entrypoint
+  namespace: mattermost
+data:
+  entrypoint.sh: |
+    #!/bin/sh
+    MM_CONFIG="/mattermost/config/config.json"
+    MM_CONFIG_TMP="${MM_CONFIG}.tmp"
+
+    generate_salt() {
+      tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32
+    }
+
+    if [ ! -f "$MM_CONFIG" ]; then
+      echo "No configuration file $MM_CONFIG, creating a new one..."
+      PUBLIC_LINK_SALT=$(generate_salt)
+      INVITE_SALT=$(generate_salt)
+      PASSWORD_RESET_SALT=$(generate_salt)
+      AT_REST_ENCRYPT_KEY=$(generate_salt)
+
+      jq \
+        --arg ds "$MM_SQLSETTINGS_DATASOURCE" \
+        --arg plsalt "$PUBLIC_LINK_SALT" \
+        --arg isalt "$INVITE_SALT" \
+        --arg prsalt "$PASSWORD_RESET_SALT" \
+        --arg arekey "$AT_REST_ENCRYPT_KEY" \
+        '.SqlSettings.DataSource = $ds
+         | .SqlSettings.DriverName = "postgres"
+         | .LogSettings.EnableConsole = true
+         | .LogSettings.ConsoleLevel = "ERROR"
+         | .FileSettings.Directory = "/mattermost/data/"
+         | .FileSettings.EnablePublicLink = true
+         | .FileSettings.PublicLinkSalt = $plsalt
+         | .EmailSettings.InviteSalt = $isalt
+         | .EmailSettings.PasswordResetSalt = $prsalt
+         | .SqlSettings.AtRestEncryptKey = $arekey
+         | .PluginSettings.Directory = "/mattermost/plugins/"' \
+        /mattermost/config.json.save > "$MM_CONFIG_TMP" && mv "$MM_CONFIG_TMP" "$MM_CONFIG"
+      echo "Config created."
+    else
+      echo "Using existing config file $MM_CONFIG"
+    fi
+
+    echo "Starting mattermost as root..."
+    exec /mattermost/bin/mattermost server
