@@ -5,8 +5,10 @@ metadata:
   namespace: mattermost
 spec:
   type: LoadBalancer
+  externalTrafficPolicy: Cluster
   selector:
     app: mattermost
   ports:
   - port: 8065
     targetPort: 8065
+    nodePort: 30065
